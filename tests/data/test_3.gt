@@ -1,0 +1,4 @@
+filename	onset	offset	event_label
+test3.wav	5.000	18.000	c1
+test3.wav	10.000	30.000	c2
+test3.wav	42.000	48.000	c3
