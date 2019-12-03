@@ -531,24 +531,6 @@ class PSDSEval:
         return PSDS(value=score, plt=psd_roc, alpha_st=alpha_st,
                     alpha_ct=alpha_ct, max_efpr=max_efpr)
 
-    def fscores(self, beta=1.):
-        """Compute f_beta score for each operating point
-
-        :param beta: fscore parameter
-        :return: list of fscore values
-        """
-        fscores = list()
-        for count in self.operating_points.counts.values:
-            tps = np.diag(count)[:-1]
-            fns = tps / self.operating_points.tpr.values
-            tp = tps.mean()
-            fn = fns.mean()
-            fp = count[:, -1].mean()
-            k = (1 + beta ** 2)
-            fscore = (k * tp) / (k * tp + beta ** 2 * fn + fp)
-            fscores.append(fscore)
-        return fscores
-
     @staticmethod
     def _auc(x, y, max_x=None):
         """

@@ -62,7 +62,8 @@ configuring the following three percentages (cf. Fig.2a article):
 
 3. **Cross-Trigger Tolerance Criterion threshold** (cf. Definition 4 article)
     * Same as GTC, but applied to the system detections that intersect ground
-    truths of any different classes.
+    truths of other classes of interest for detection, as distinct from false
+    alarms which don’t intersect with any other label.
 
 Moreover, the calculation of the PSDS of a system can be configured to take into
 account several constraints:
@@ -70,12 +71,12 @@ account several constraints:
 - The importance of **cross-triggers** can be specified in the effective False
 Positive Rate definition by the parameter `alpha_ct` (cf. Equation 6 article)
 
-- How important the **intra-class variability** is controlled in the definition of
+- How important the **inter-class variability** is controlled in the definition of
 the effective True Positive Ratio by the parameter `alpha_st` (cf. Equation 9 article)
 
 - The maximum effective False Positive Rate at which the area under the PSD-ROC is
 computed can be adjusted by the parameter `max_efpr`. This value is crucial because
-defines an upper bound for the mistakes a system can make in a unit of time (e.g., hours)
+defines an upper bound for the mistakes a system can make in a unit of time.
 
 
 **Important notes:**
