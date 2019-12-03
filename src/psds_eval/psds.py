@@ -7,41 +7,50 @@ import matplotlib.pyplot as plt
 
 WORLD = "injected_psds_world_label"
 
-RatesPerClass = namedtuple("RatesPerClass",
-                           ["tp_ratio", "fp_rate", "ct_rate",
-                            "effective_fp_rate"])
+RatesPerClass = namedtuple("RatesPerClass", ["tp_ratio", "fp_rate", "ct_rate",
+                                             "effective_fp_rate"])
 PSDROC = namedtuple("PSDROC", ["yp", "xp", "mean", "std"])
-PSDS = namedtuple("PSDS", ["value", "plt", "alpha_st",
-                           "alpha_ct", "max_efpr"])
+PSDS = namedtuple("PSDS", ["value", "plt", "alpha_st", "alpha_ct", "max_efpr"])
 Thresholds = namedtuple("Thresholds", ["gtc", "dtc", "cttc"])
 
 
 class PSDSEval:
-    """ A class to provide PSDS calculation
+    """A class to provide PSDS evaluation
 
     PSDS is the Polyphonic Sound Detection Score and was presented by
     Audio Analytic Labs in:
     A Framework for the Robust Evaluation of Sound Event Detection
     C. Bilen, G. Ferroni, F. Tuveri, J. Azcarreta, S. Krstulovic
     https://arxiv.org/abs/1910.08440
+
+    Attributes:
+        operating_points: An object containing all operating point data
+        ground_truth: A pd.DataFrame that contains the ground truths
+        metadata: A pd.DataFrame that contains the audio metadata
+        class_names (list): A list of all class names in the evaluation
+        threshold: (tuple): A namedTuple that contains the, gtc, dtc, and cttc
+        nseconds (int): The number of seconds in the evaluation's unit of time
     """
 
     secs_in_uot = {"minute": 60, "hour": 3600, "day": 24 * 3600,
                    "month": 30 * 24 * 3600, "year": 365 * 24 * 3600}
     detection_cols = ["filename", "onset", "offset", "event_label"]
 
-    def __init__(self, dtc_threshold=0.5, gtc_threshold=0.5, cttc_threshold=0.3,
-                 **kwargs):
+    def __init__(self, dtc_threshold=0.5, gtc_threshold=0.5,
+                 cttc_threshold=0.3, **kwargs):
         """Initialise the PSDS evaluation
 
-        :param dtc_threshold: Detection Tolerance Criteria (DTC) threshold
-        :param gtc_threshold: Ground Truth Intersection Criteria (GTC) threshold
-        :param cttc_threshold: Cross-Trigger Tolerance Criteria (CTTC) threshold
-        :param **kwargs:
+        Args:
+            dtc_threshold: Detection Tolerance Criteria (DTC) threshold
+            gtc_threshold: Ground Truth Intersection Criteria (GTC) threshold
+            cttc_threshold: Cross-Trigger Tolerance Criteria (CTTC) threshold
+            **kwargs:
             class_names: list of output class names. If not given it will be
-                            inferred from the ground truth table
+                inferred from the ground truth table
             duration_unit: unit of time ('minute', 'hour', 'day', 'month',
-                              'year') for FP/CT rates report
+                'year') for FP/CT rates report
+        Raises:
+            ValueError: If any of the input values are incorrect.
         """
         if dtc_threshold < 0.0 or dtc_threshold > 1.0:
             raise ValueError("dtc_threshold must be between 0 and 1")
@@ -69,13 +78,14 @@ class PSDSEval:
 
     @staticmethod
     def _validate_input_table(df, columns):
-        """
-        Validates given pandas.DataFrame
+        """Validates given pandas.DataFrame
 
-        :param df: pandas.DataFrame to be validated
-        :param columns: list of column names
+        Args:
+            df (pandas.DataFrame): to be validated
+            columns (list): Column names that should be in the df
 
-        :return: True if input is ok
+        Raises:
+            ValueError: If there is something incorrect about the df provided
         """
         if not isinstance(df, pd.DataFrame):
             raise ValueError("The data must be provided in a pandas.DataFrame")
@@ -99,7 +109,18 @@ class PSDSEval:
             self.class_names = sorted(_classes)
 
     def set_ground_truth(self, gt_t, meta_t):
-        """validates and updates the class's ground truth"""
+        """Validates and updates the class with a set of Ground Truths
+
+        The Ground Truths and Metadata are used to count true positives
+        (TPs), false positives (FPs) and cross-triggers (CTs) for all
+        operating points when they are later added.
+
+        Args:
+            gt_t (pandas.DataFrame): A table of ground truths
+            meta_t (pandas.DataFrame): A table of audio metadata information
+        Raises:
+            ValueError if there is an issue with the input data
+        """
         if self.ground_truth is not None or self.metadata is not None:
             raise ValueError("You cannot set the ground truth more than once "
                              "per evaluation")
@@ -111,7 +132,7 @@ class PSDSEval:
 
         self._validate_input_table(gt_t, self.detection_cols)
         self._validate_input_table(meta_t, ["filename", "duration"])
-        _ground_truth = gt_t   # TODO check this doesn't overwrite input data
+        _ground_truth = gt_t
         _metadata = meta_t
 
         # remove duplicated entries (possible mistake in its generation?)
@@ -132,16 +153,16 @@ class PSDSEval:
         self.metadata = metadata_t
 
     def _init_det_table(self, det_t):
-        """
-        Validate and prepare the input tables for later processing:
-         * drop duplicated filenames and sort by (filename, onset, offset)
-         * add unique row index as column
-         * add a WORLD ground truth for each filename long as file duration
-         * define the class names
+        """Validate and prepare an input detection table
 
-        :param det_t:(pandas.DataFrame) system detection table
+        Validates and updates the a detection table with an 'id' and
+        duration column.
 
-        :return: tuple with the three tables validated and processed
+        Args:
+            det_t (pandas.DataFrame): A system's detection table
+
+        Returns:
+            A tuple with the three validated and processed tables
         """
         self._validate_input_table(det_t, self.detection_cols)
         detection_t = det_t.sort_values(by=self.detection_cols[:2], axis=0)
@@ -151,11 +172,10 @@ class PSDSEval:
 
     @staticmethod
     def _update_world_detections(columns, ground_truth, metadata):
-        """Extend the ground truth with world detections
+        """Extend the ground truth with WORLD detections
 
-        append to each file an artificial ground truth of length equal to
-        the file duration provided in the metadata table. This updates the
-        ground truth with world detections.
+        Append to each file an artificial ground truth of length equal
+        to the file duration provided in the metadata table.
         """
         world_gt = [
             {k: v for k, v in zip(columns,
@@ -178,44 +198,48 @@ class PSDSEval:
 
     @staticmethod
     def _ground_truth_intersections(detection_t, ground_truth_t):
-        # Create a table with intersections of detections and ground truth by an
-        # outer merge op between detections and ground truths tables on filename
-        # the results is a table with all the combination detection-ground_truth
+        """Creates a table to represent the ground truth intersections
+
+        Returns:
+            A pandas table that contains the following columns:
+                inter_duration: intersection between detection and gt (s)
+                det_precision: indicates what portion of a detection
+                    intersect one or more ground truths of the same class
+                gt_coverage: measures what proportion of a ground truth
+                    is covered by one or more detections of the same class
+        """
+
         comb_t = pd.merge(detection_t, ground_truth_t,
-                          how='outer', on='filename', suffixes=("_det", "_gt"))
-        # new table containing only the detections intersecting one or more
-        # ground truths
+                          how='outer', on='filename',
+                          suffixes=("_det", "_gt"))
+        # cross_t contains detections that intersect one or more ground truths
         cross_t = comb_t[(comb_t.onset_det <= comb_t.offset_gt) &
                          (comb_t.onset_gt <= comb_t.offset_det) &
                          comb_t.filename.notna()].copy(deep=True)
         # Add a flag to show that GT and Event labels are of the same class
         cross_t["same_cls"] = cross_t.event_label_det == cross_t.event_label_gt
 
-        # add new columns to the table:
-        #  inter_duration: intersection between detection and gt (s)
-        #  det_precision: indicates what portion of a detection intersect one or
-        #                 more ground truths of the same class
-        #  gt_coverage: measures what proportion of a ground truth is covered by
-        #               one or more detections of the same class
         cross_t["inter_duration"] = \
             np.minimum(cross_t.offset_det, cross_t.offset_gt) - \
             np.maximum(cross_t.onset_det, cross_t.onset_gt)
-        cross_t["det_precision"] = cross_t.inter_duration / cross_t.duration_det
-        cross_t["gt_coverage"] = cross_t.inter_duration / cross_t.duration_gt
+        cross_t["det_precision"] = \
+            cross_t.inter_duration / cross_t.duration_det
+        cross_t["gt_coverage"] = \
+            cross_t.inter_duration / cross_t.duration_gt
         return cross_t
 
     def _detection_and_ground_truth_criterons(self, cross_t):
         """Creates GTC and DTC detection sets
 
         Args:
-            cross_t: A DataFrame containing detections and their timings
-            that intersect with the class's ground truths.
+            cross_t (pandas.DataFrame): A DataFrame containing detections and
+                their timings that intersect with the class's ground truths.
 
         Returns:
             A tuple that contains two DataFrames. The first a table of
             true positive detections that satisfy both DTC and GTC. The
-            second contains only the IDs of the detections that satisfy the
-            DTC.
+            second contains only the IDs of the detections that satisfy
+            the DTC.
         """
 
         # Detections that intersect with the the ground truths
@@ -254,7 +278,7 @@ class PSDSEval:
 
     def _evaluate_detections(self, tp, ct):
         """Produces a confusion matrix and detection rates for all classes"""
-        n_classes = len(self.class_names) - 1  # Remove the world label count
+        n_classes = len(self.class_names) - 1  # -1 to removes the world label
         counts = np.zeros([n_classes + 1, n_classes + 1])
         tp_ratio = np.zeros(n_classes)
         fp_rate = np.zeros(n_classes)
@@ -262,16 +286,16 @@ class PSDSEval:
         class_names_set = set(self.class_names)
         t_filter = self.ground_truth.event_label == WORLD
         dataset_dur = self.ground_truth[t_filter].duration.sum()
-        # count number of detections for each gt
-        ct_tmp = ct.groupby(["event_label_det", "event_label_gt"]
-                            ).filename.count()
+        ct_tmp = \
+            ct.groupby(["event_label_det", "event_label_gt"]).filename.count()
         gt_dur = self.ground_truth.groupby("event_label").duration.sum()
 
         # counts is a confusion matrix
         # i, cls: detection -- j, ocls: ground truth
         for i, cls in enumerate(sorted(class_names_set.difference([WORLD]))):
             counts[i, i] = len(tp[tp.event_label_gt == cls])
-            n_cls_gt = self.ground_truth.groupby("event_label").filename.count()
+            n_cls_gt = \
+                self.ground_truth.groupby("event_label").filename.count()
             if cls in n_cls_gt:
                 tp_ratio[i] = counts[i, i] / n_cls_gt[cls]
             for j, ocls in enumerate(sorted(class_names_set)):
@@ -297,8 +321,16 @@ class PSDSEval:
 
         The CTTC set consists of detections that:
             1) are not in the True Positive table
-            2) intersect with ground truth of a different class (incl. world)
+            2) intersect with ground truth of a different class (incl. WORLD)
             3) have not satisfied the detection tolerance criteria
+
+        Args:
+            inter_t (pandas.DataFrame): The table of detections and their
+                ground truth intersection calculations
+            tp_t (pandas.DataFrame): A detection table containing true positive
+                detections.
+            dtc_ids (pandas.DataFrame): A table containing a list of the uid's
+                that pass the dtc.
         """
 
         ct_t = inter_t[~inter_t.id_det.isin(tp_t.id_det) &
@@ -318,14 +350,20 @@ class PSDSEval:
         return cttc
 
     def add_operating_point(self, detections):
-        """
-        Compute a system Operating Point (OP) defined by the detections_in table
-        which contains the system's detection for a dataset. The dataset ground
-        truths and metadata are used to count true positives (TPs), false
-        positives (FPs) and cross-triggers (CTs). Three criteria are applied
-        DTC, GTC and CTTC (cf. paper link above)
+        """Adds a new Operating Point (OP) into the evaluation
 
-        :param detections: pandas.DataFrame with system detections
+        An operating point is defined by a system's detection results given
+        some user parameters. It is expected that a user generates detection
+        data from multiple operating points and then passes all data to this
+        function during a single system evaluation so that a comprehensive
+        result can be provided.
+
+        Args:
+            detections (pandas.DataFrame): A table of system detections
+                that has the following columns:
+                "filename", "onset", "offset", "event_label".
+        Raises:
+            ValueError: If the PSDSEval ground_truth or metadata are unset.
         """
         if self.ground_truth is None:
             raise ValueError("Ground Truth must be provided before adding the "
@@ -348,36 +386,41 @@ class PSDSEval:
         cttc = cttc.drop_duplicates(["id_det", "event_label_gt"])
         tp = tp.drop_duplicates("id_gt")
 
-        counts, tp_ratio, fp_rate, ct_rate = self._evaluate_detections(tp, cttc)
-        self._add_op(id=op_id, counts=counts, tpr=tp_ratio, fpr=fp_rate,
+        cts, tp_ratio, fp_rate, ct_rate = self._evaluate_detections(tp, cttc)
+        self._add_op(opid=op_id, counts=cts, tpr=tp_ratio, fpr=fp_rate,
                      ctr=ct_rate)
 
     @staticmethod
     def _operating_points_table():
+        """Returns and empty operating point table with the correct columns"""
         return pd.DataFrame(columns=["id", "counts", "tpr", "fpr", "ctr"])
 
-    def _add_op(self, id, counts, tpr, fpr, ctr):
+    def _add_op(self, opid, counts, tpr, fpr, ctr):
         """Adds a new operating point into the class"""
-        op = {"id": id, "counts": counts, "tpr": tpr, "fpr": fpr, "ctr": ctr}
+        op = {"id": opid, "counts": counts, "tpr": tpr, "fpr": fpr, "ctr": ctr}
         self.operating_points = \
             self.operating_points.append(op, ignore_index=True)
 
     def _del_ops(self):
-        """Resets all operating points"""
+        """Deletes and resets all PSDSEval operating points"""
         del self.operating_points
         self.operating_points = self._operating_points_table()
 
     @staticmethod
     def perform_interp(x, xp, yp):
-        """
-        Interpolate the curve (xp, yp) over the datapoints given by x. This
-        interpolation uses numpy.interp but deals with duplicates in xp
+        """Interpolate the curve (xp, yp) over the points given in x
 
-        :param x: x-values at which evaluate the interpolated values
-        :param xp: x-values of the curve to be interpolated
-        :param yp: y-values of the curve to be interpolated
+        This interpolation function uses numpy.interp but deals with
+        duplicates in xp quietly.
 
-        :return y_iterp_x: interpolated values
+        Args:
+            x (numpy.ndarray): a series of points at which to
+                evaluate the interpolated values
+            xp (numpy.ndarray): x-values of the curve to be interpolated
+            yp (numpy.ndarray): y-values of the curve to be interpolated
+
+        Returns:
+            Interpolated values stored in a numpy.ndarray
         """
         new_y = np.zeros_like(x)
         sorted_idx = np.argsort(xp)
@@ -393,17 +436,22 @@ class PSDSEval:
 
     @staticmethod
     def step_curve(x, xp, yp):
-        """
-        Performs a special interpolation of the ROC described by (xp, yp) on
-        the given x-coordinates (where x.size >= unique(xp).size).
-        First, xp values for which many yp values exists
-        yp is first made monotonic so that valid, but unuseable, operating points are
-        removed
-        :param x: x-values at which evaluate the interpolated values
-        :param xp: x-values of the curve to be interpolated
-        :param yp: y-values of the curve to be interpolated
+        """Performs a custom interpolation on the ROC described by (xp, yp)
 
-        :return: interpolated y values
+        The interpolation is performed on the given x-coordinates (x)
+        and x.size >= unique(xp).size. If more than one yp value exists
+        for the same xp value, only the highest yp is retained. Also yp
+        is made non-decreasing so that sub optimal operating points are
+        ignored.
+
+        Args:
+            x (numpy.ndarray): a series of points at which to
+                evaluate the interpolated values
+            xp (numpy.ndarray): x-values of the curve to be interpolated
+            yp (numpy.ndarray): y-values of the curve to be interpolated
+
+        Returns:
+            numpy.ndarray: An array of interpolated y values
         """
         roc_orig = pd.DataFrame({'x': xp, 'y': yp})
         roc_valid_only = (roc_orig.groupby('x')
@@ -428,7 +476,9 @@ class PSDSEval:
         Calculates the the eFPR per class applying the given weight
         to cross-triggers.
 
-        :param alpha_ct: cross-trigger weight in effective FP rate computation
+        Args:
+             alpha_ct (float): cross-trigger weight in effective
+                 FP rate computation
         """
         if alpha_ct < 0 or alpha_ct > 1:
             raise ValueError("alpha_ct must be between 0 and 1")
@@ -452,8 +502,13 @@ class PSDSEval:
     def psd_roc_curves(self, alpha_ct, linear_interp=False):
         """Generates PSD-ROC TPR vs FPR/eFPR/CTR
 
-        :param alpha_ct:
-        :param linear_interp: use linear interpolation
+        Args:
+            alpha_ct (float): The weighting placed upon cross triggered FPs
+            linear_interp (bool): Enables linear interpolation.
+
+        Returns:
+            A tuple containing the following ROC curves, tpr_vs_fpr,
+            tpr_vs_ctr, tpr_vs_efpr.
         """
         pcr = self._effective_fp_rate(alpha_ct)
         n_classes = len(self.class_names) - 1
@@ -491,10 +546,20 @@ class PSDSEval:
 
     @staticmethod
     def _effective_tp_ratio(tpr_efpr, alpha_st):
-        """Calculates the eTPR
+        """Calculates the effective true positive rate (eTPR)
 
         Reduces a set of class ROC curves into a single Polyphonic
         Sound Detection (PSD) ROC curve.
+
+        Args:
+            tpr_efpr (numpy.ndarray): A ROC that describes the PSD-ROC
+                for all classes
+            alpha_st (numpy.ndarray): A weighting applied to the
+                inter-class variability
+
+        Returns:
+            PSDROC: A namedTuple that describes the PSD-ROC used for the
+            calculation of PSDS.
         """
         etpr = tpr_efpr.mean - alpha_st * tpr_efpr.std
         etpr[etpr < 0] = 0.0
@@ -509,15 +574,19 @@ class PSDSEval:
     def psds(self, alpha_ct=0.0, alpha_st=0.0, max_efpr=None, en_interp=False):
         """Computes PSDS metric for given system
 
-        :param alpha_ct: cross-trigger weight in effective FP rate computation
-        :param alpha_st: cost of instability across classes used to compute
-                         effective TP ratio (eTPR)
-        :param max_efpr: maximum effective FP rate at which the SED system is
-                         evaluated (default: 100 errors per unit of time)
-        :param en_interp: perform linear interpolation instead of staircase
-                          when computing PSD ROC
+        Args:
+            alpha_ct (float): cross-trigger weight in effective FP
+                rate computation
+            alpha_st (float): cost of instability across classes used
+                to compute effective TP ratio (eTPR)
+            max_efpr (float): maximum effective FP rate at which the SED
+                system is evaluated (default: 100 errors per unit of time)
+            en_interp (bool): if true the psds is calculated using
+                linear interpolation instead of a standard staircase
+                when computing PSD ROC
 
-        :return score: (PSDS) Polyphonic Sound Event Detection Score object
+        Returns:
+            A (PSDS) Polyphonic Sound Event Detection Score object
         """
 
         tpr_fpr_curve, tpr_ctr_curve, tpr_efpr_curve = \
@@ -533,20 +602,28 @@ class PSDSEval:
 
     @staticmethod
     def _auc(x, y, max_x=None):
-        """
-        Compute area under curve described by the given x, y points. To avoid
-        overestimate the area in case of large gaps between points, the area
-        is computed as sums of rectangles rather than trapezoids (np.trapz).
+        """Compute area under curve described by the given x, y points.
+
+        To avoid an overestimate the area in case of large gaps between
+        points, the area is computed as sums of rectangles rather than
+        trapezoids (np.trapz).
 
         Both x and y must be non-decreasing 1-dimensional numpy.ndarray. The
         non-decreasing property is verified if for all i in {2, ..., x.size},
         x[i-1] <= x[i]
 
-        :param x: 1-D np.ndarray containing non-decreasing values for x-axis
-        :param y: 1-D np.ndarray containing non-decreasing values for y-axis
-        :param max_x: maximum x-coordinate for area computation
+        Args:
+            x (numpy.ndarray): 1-D array containing non-decreasing
+                values for x-axis
+            y (numpy.ndarray): 1-D array containing non-decreasing
+                values for y-axis
+            max_x (float): maximum x-coordinate for area computation
 
-        :return : area under curve
+        Returns:
+             A float that represents the area under curve
+
+        Raises:
+            ValueError: If there is an issue with the input data
         """
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
             raise ValueError("x and y must be provided as a numpy.ndarray")
@@ -578,22 +655,25 @@ class PSDSEval:
 
 
 def plot_psd_roc(psd, en_std=False, filename=None, figsize=None):
-    """
-    Shows (or saves) the PSD-ROC with optional std. The area under PSD-ROC
-    is highlighted. The plot is affected by the values used to compute the
-    metric (i.e., max_efpr, alpha_ST and alpha_CT)
+    """Shows (or saves) the PSD-ROC with optional standard deviation.
 
-    :param psd: The psd_roc that is to be plotted
-    :param en_std: bool to enable the plot of curve standard deviation
-    :param filename: if provided a file will be saved with this name
-    :param figsize: The figsize to be given to matplotlib
+    When the plot is generated the area under PSD-ROC is highlighted.
+    The plot is affected by the values used to compute the metric:
+    max_efpr, alpha_ST and alpha_CT
+
+    Args:
+        psd (PSDS): The psd_roc that is to be plotted
+        en_std (bool): if true the the plot will show the standard
+            deviation curve
+        filename (str): if provided a file will be saved with this name
+        figsize (tuple): The figsize to be given to matplotlib
     """
 
     if not isinstance(psd, PSDS):
         raise RuntimeError("The psds data needs to be given as a PSDS object")
 
     if figsize is None:
-        figsize = [7, 7]
+        figsize = (7, 7)
 
     plt.figure(figsize=figsize)
     plt.vlines(psd.max_efpr, ymin=0, ymax=1.0, linestyles='dashed')
