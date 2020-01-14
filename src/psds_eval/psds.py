@@ -14,6 +14,11 @@ PSDS = namedtuple("PSDS", ["value", "plt", "alpha_st", "alpha_ct", "max_efpr"])
 Thresholds = namedtuple("Thresholds", ["gtc", "dtc", "cttc"])
 
 
+class PSDSEvalError(ValueError):
+    """Error to be raised when function inputs are invalid"""
+    pass
+
+
 class PSDSEval:
     """A class to provide PSDS evaluation
 
@@ -50,18 +55,18 @@ class PSDSEval:
             duration_unit: unit of time ('minute', 'hour', 'day', 'month',
                 'year') for FP/CT rates report
         Raises:
-            ValueError: If any of the input values are incorrect.
+            PSDSEvalError: If any of the input values are incorrect.
         """
         if dtc_threshold < 0.0 or dtc_threshold > 1.0:
-            raise ValueError("dtc_threshold must be between 0 and 1")
+            raise PSDSEvalError("dtc_threshold must be between 0 and 1")
         if cttc_threshold < 0.0 or cttc_threshold > 1.0:
-            raise ValueError("cttc_threshold must be between 0 and 1")
+            raise PSDSEvalError("cttc_threshold must be between 0 and 1")
         if gtc_threshold < 0.0 or gtc_threshold > 1.0:
-            raise ValueError("gtc_threshold must be between 0 and 1")
+            raise PSDSEvalError("gtc_threshold must be between 0 and 1")
 
         duration_unit = kwargs.get("duration_unit", "hour")
         if duration_unit not in self.secs_in_uot.keys():
-            raise ValueError("Invalid duration_unit specified")
+            raise PSDSEvalError("Invalid duration_unit specified")
         self.nseconds = self.secs_in_uot[duration_unit]
 
         self.class_names = []
@@ -85,13 +90,14 @@ class PSDSEval:
             columns (list): Column names that should be in the df
 
         Raises:
-            ValueError: If there is something incorrect about the df provided
+            PSDSEvalError: If the df provided is invalid
         """
         if not isinstance(df, pd.DataFrame):
-            raise ValueError("The data must be provided in a pandas.DataFrame")
+            raise PSDSEvalError("The data must be provided in "
+                                "a pandas.DataFrame")
         if not sorted(columns) == sorted(df.columns):
-            raise ValueError("The data columns need to match the following",
-                             columns)
+            raise PSDSEvalError("The data columns need to match the following",
+                                columns)
 
     def num_operating_points(self):
         """Returns the number of operating point registered"""
@@ -119,16 +125,16 @@ class PSDSEval:
             gt_t (pandas.DataFrame): A table of ground truths
             meta_t (pandas.DataFrame): A table of audio metadata information
         Raises:
-            ValueError if there is an issue with the input data
+            PSDSEvalError if there is an issue with the input data
         """
         if self.ground_truth is not None or self.metadata is not None:
-            raise ValueError("You cannot set the ground truth more than once "
-                             "per evaluation")
+            raise PSDSEvalError("You cannot set the ground truth more than"
+                                " once per evaluation")
         if gt_t is None and meta_t is not None:
-            raise ValueError("The ground truth cannot be set without data")
+            raise PSDSEvalError("The ground truth cannot be set without data")
         if meta_t is None and gt_t is not None:
-            raise ValueError("Audio metadata is required when adding ground "
-                             "truths")
+            raise PSDSEvalError("Audio metadata is required when adding "
+                                "ground truths")
 
         self._validate_input_table(gt_t, self.detection_cols)
         self._validate_input_table(meta_t, ["filename", "duration"])
@@ -363,14 +369,14 @@ class PSDSEval:
                 that has the following columns:
                 "filename", "onset", "offset", "event_label".
         Raises:
-            ValueError: If the PSDSEval ground_truth or metadata are unset.
+            PSDSEvalError: If the PSDSEval ground_truth or metadata are unset.
         """
         if self.ground_truth is None:
-            raise ValueError("Ground Truth must be provided before adding the "
-                             "first operating point")
+            raise PSDSEvalError("Ground Truth must be provided before "
+                                "adding the first operating point")
         if self.metadata is None:
-            raise ValueError("Audio metadata must be provided before adding "
-                             "the first operating point")
+            raise PSDSEvalError("Audio metadata must be provided before "
+                                "adding the first operating point")
 
         # validate and prepare tables
         det_t = self._init_det_table(detections)
@@ -459,7 +465,7 @@ class PSDSEval:
                           .reset_index()
                           .sort_values(by='x'))
         if x.size < roc_valid_only.x.size:
-            raise RuntimeError("x: {}, xp: {}".format(x.size, xp.size))
+            raise PSDSEvalError(f"x: {x.size}, xp: {xp.size}")
         # make y monotonic (given the TP/FP counting method rocs are not
         # monotonically increasing)
         roc_valid_only.y = roc_valid_only.y.cummax()
@@ -481,7 +487,7 @@ class PSDSEval:
                  FP rate computation
         """
         if alpha_ct < 0 or alpha_ct > 1:
-            raise ValueError("alpha_ct must be between 0 and 1")
+            raise PSDSEvalError("alpha_ct must be between 0 and 1")
 
         # add a zero-point in each arr below (using np.pad)
         tpr_arr = np.stack(self.operating_points.tpr.values, axis=1)
@@ -623,19 +629,19 @@ class PSDSEval:
              A float that represents the area under curve
 
         Raises:
-            ValueError: If there is an issue with the input data
+            PSDSEvalError: If there is an issue with the input data
         """
         if not isinstance(x, np.ndarray) or not isinstance(y, np.ndarray):
-            raise ValueError("x and y must be provided as a numpy.ndarray")
+            raise PSDSEvalError("x and y must be provided as a numpy.ndarray")
         if x.ndim > 1 or y.ndim > 1:
-            raise ValueError("x or y are not 1-dimensional numpy.ndarray")
+            raise PSDSEvalError("x or y are not 1-dimensional numpy.ndarray")
         if x.size != y.size:
-            raise ValueError("x and y must be of equal length "
-                             "{} != {}".format(x.size, y.size))
+            raise PSDSEvalError(f"x and y must be of equal "
+                                f"length {x.size} != {y.size}")
         if np.any(np.diff(x) < 0):
-            raise RuntimeError("non-decreasing property not verified for x")
+            raise PSDSEvalError("non-decreasing property not verified for x")
         if np.any(np.diff(y) < 0):
-            raise RuntimeError("non-decreasing property not verified for y")
+            raise PSDSEvalError("non-decreasing property not verified for y")
         _x = np.array(x)
         _y = np.array(y)
 
@@ -650,7 +656,7 @@ class PSDSEval:
         dx = np.diff(_x[valid_idx])
         _y = np.array(_y[valid_idx])[:-1]
         if dx.size != _y.size:
-            raise ValueError("{} != {}".format(dx.size, _y.size))
+            raise PSDSEvalError(f"{dx.size} != {_y.size}")
         return np.sum(dx * _y)
 
 
@@ -670,7 +676,7 @@ def plot_psd_roc(psd, en_std=False, filename=None, figsize=None):
     """
 
     if not isinstance(psd, PSDS):
-        raise RuntimeError("The psds data needs to be given as a PSDS object")
+        raise PSDSEvalError("The psds data needs to be given as a PSDS object")
 
     if figsize is None:
         figsize = (7, 7)
@@ -691,10 +697,9 @@ def plot_psd_roc(psd, en_std=False, filename=None, figsize=None):
     plt.legend()
     plt.ylabel("eTPR")
     plt.xlabel("eFPR")
-    plt.suptitle("PSDS: {0:.5f}".format(psd.value))
-    plt.title("alpha_st: {0:.2f}, alpha_ct: {1:.2f}, "
-              "max_efpr: {2}".format(psd.alpha_st, psd.alpha_ct,
-                                     psd.max_efpr))
+    plt.suptitle(f"PSDS: {psd.value:.5f}")
+    plt.title(f"alpha_st: {psd.alpha_st:.2f}, alpha_ct: {psd.alpha_ct:.2f}, "
+              f"max_efpr: {psd.max_efpr}")
     plt.grid()
     if filename:
         plt.savefig(filename)
