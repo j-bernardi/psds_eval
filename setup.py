@@ -11,7 +11,7 @@ def package_file(fname):
 
 __version__ = None
 # Get the version number from the version file
-with open(package_file("version.py")) as fp:
+with open(package_file("src/psds_eval/version.py")) as fp:
     exec(fp.read())
 assert __version__ is not None
 
