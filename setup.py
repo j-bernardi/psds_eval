@@ -27,7 +27,7 @@ setuptools.setup(
     long_description=open(package_file("README.md")).read(),
     long_description_content_type='text/markdown',
     url="https://github.com/audioanalytic/psds_eval",
-    python_requires="==3.6.*",
+    python_requires=">=3.6",
     package_dir={"": package_file("src")},
     packages=setuptools.find_packages(package_file("src")),
     install_requires=["pandas>=0.19",
