@@ -27,7 +27,13 @@ def test_valid_thresholds(x):
     assert PSDSEval(gtc_threshold=x)
 
 
-def test_operating_point_with_no_ground_truth():
+def tests_num_operating_points_without_any_operating_points():
+    """Ensures that the eval class has no operating points when initialised"""
+    psds_eval = PSDSEval()
+    assert psds_eval.num_operating_points() == 0
+
+
+def test_eval_class_with_no_ground_truth():
     """Ensure that PSDSEval raises a PSDSEvalError when GT is None"""
     metadata = pd.read_csv(os.path.join(DATADIR, "test.metadata"), sep="\t")
     with pytest.raises(PSDSEvalError,
@@ -35,7 +41,7 @@ def test_operating_point_with_no_ground_truth():
         PSDSEval(metadata=metadata, ground_truth=None)
 
 
-def test_operating_point_with_no_metadata():
+def test_eval_class_with_no_metadata():
     """Ensure that PSDSEval raises a PSDSEvalError when metadata is None"""
     gt = pd.read_csv(os.path.join(DATADIR, "test_1.gt"), sep="\t")
     with pytest.raises(PSDSEvalError,
@@ -60,6 +66,17 @@ def test_set_ground_truth_with_no_metadata():
         psds_eval.set_ground_truth(gt, None)
 
 
+def test_setting_ground_truth_more_than_once():
+    """Ensure that an error is raised when the ground truth is set twice"""
+    gt = pd.read_csv(os.path.join(DATADIR, "test_1.gt"), sep="\t")
+    metadata = pd.read_csv(os.path.join(DATADIR, "test.metadata"), sep="\t")
+    psds_eval = PSDSEval(metadata=metadata, ground_truth=gt)
+
+    with pytest.raises(PSDSEvalError, match="You cannot set the ground truth "
+                                            "more than once per evaluation"):
+        psds_eval.set_ground_truth(gt_t=gt, meta_t=metadata)
+
+
 BAD_GT_DATA = [[], (0.12, 8), float("-inf"), {"gt": [7, 2]}]
 
 
@@ -81,6 +98,52 @@ def test_set_ground_truth_with_bad_metadata(bad_data):
     with pytest.raises(PSDSEvalError, match="The data must be "
                                             "provided in a pandas.DataFrame"):
         psds_eval.set_ground_truth(gt, bad_data)
+
+
+def test_add_operating_point_with_no_metadata():
+    """Ensure that add_operating_point raises an error when metadata is none"""
+    det = pd.read_csv(os.path.join(DATADIR, "test_1.det"), sep="\t")
+    psds_eval = PSDSEval(metadata=None, ground_truth=None)
+    with pytest.raises(PSDSEvalError,
+                       match="Ground Truth must be provided "
+                             "before adding the first operating point"):
+        psds_eval.add_operating_point(det)
+
+
+def test_add_operating_point_with_wrong_data_format():
+    """Ensure add_operating_point raises an error when the input is not a
+    pandas table"""
+    det = pd.read_csv(os.path.join(DATADIR, "test_1.det"), sep="\t").to_numpy()
+    metadata = pd.read_csv(os.path.join(DATADIR, "test.metadata"), sep="\t")
+    gt = pd.read_csv(os.path.join(DATADIR, "test_1.gt"), sep="\t")
+    psds_eval = PSDSEval(metadata=metadata, ground_truth=gt)
+    with pytest.raises(PSDSEvalError, match="The data must be provided in a "
+                                            "pandas.DataFrame"):
+        psds_eval.add_operating_point(det)
+
+
+def test_add_operating_point_with_empty_dataframe():
+    """Ensure add_operating_point raises an error when given an
+    incorrect table"""
+    det = pd.DataFrame()
+    metadata = pd.read_csv(os.path.join(DATADIR, "test.metadata"), sep="\t")
+    gt = pd.read_csv(os.path.join(DATADIR, "test_1.gt"), sep="\t")
+    psds_eval = PSDSEval(metadata=metadata, ground_truth=gt)
+    with pytest.raises(PSDSEvalError,
+                       match="The data columns need to match the following"):
+        psds_eval.add_operating_point(det)
+
+
+def test_that_add_operating_point_added_a_point():
+    """Ensure add_operating_point adds an operating point correctly"""
+    det = pd.read_csv(os.path.join(DATADIR, "test_1.det"), sep="\t")
+    metadata = pd.read_csv(os.path.join(DATADIR, "test.metadata"), sep="\t")
+    gt = pd.read_csv(os.path.join(DATADIR, "test_1.gt"), sep="\t")
+    psds_eval = PSDSEval(metadata=metadata, ground_truth=gt)
+    psds_eval.add_operating_point(det)
+    assert psds_eval.num_operating_points() == 1
+    assert psds_eval.operating_points["id"][0] == \
+        "6f504797195d2df3bae13e416b8bf96ca89ec4e4e4d031dadadd72e382640387"
 
 
 def test_full_psds():
